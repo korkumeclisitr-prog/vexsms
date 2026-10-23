@@ -1,13 +1,32 @@
 'use client'
 
-import { useState } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import { useState, useEffect } from 'react'
+import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
 
-const supabase = createClient(
+const supabase = createBrowserClient(
   'https://zdblltfiqfttktkepubr.supabase.co',
   'sb_publishable_s8L40TFgladKkyiOu1gOXQ_yWX0-2l9'
 )
+
+function mapAuthError(message: string): string {
+  if (message.includes('Invalid login credentials')) {
+    return 'E-posta adresi veya şifre hatalı.'
+  }
+  if (message.includes('Email not confirmed')) {
+    return 'Lütfen e-posta adresinize gönderilen doğrulama linkine tıklayarak hesabınızı onaylayın.'
+  }
+  if (message.includes('User already registered')) {
+    return 'Bu e-posta adresi ile zaten kayıtlı bir hesap var. Lütfen giriş yapın.'
+  }
+  if (message.includes('Password should be at least 6 characters')) {
+    return 'Şifreniz en az 6 karakter olmalıdır.'
+  }
+  if (message.includes('rate limit') || message.includes('over_email_send_rate_limit')) {
+    return 'Çok fazla deneme yapıldı. Lütfen biraz bekleyip tekrar deneyin.'
+  }
+  return message
+}
 
 export default function LoginPage() {
   const router = useRouter()
@@ -16,30 +35,57 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+
+  // Oturumu kontrol et; zaten giriş yapılmışsa ana sayfaya yönlendir
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        router.push('/')
+      }
+    })
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        router.push('/')
+        router.refresh()
+      }
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+    setSuccess(null)
     setLoading(true)
 
     try {
       if (isLogin) {
-        // Giriş Yap
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email,
+        // Giriş Yap - Doğrudan Supabase istemci çağrısı
+        const { data, error: signInError } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
           password,
         })
         if (signInError) throw signInError
-        router.push('/')
-        router.refresh()
+
+        if (data.session) {
+          router.push('/')
+          router.refresh()
+        }
       } else {
-        // Kayıt Ol
+        // Kayıt Ol - Doğrudan Supabase istemci çağrısı
         const { data, error: signUpError } = await supabase.auth.signUp({
-          email,
+          email: email.trim(),
           password,
           options: {
-            data: { full_name: fullName }
+            data: { full_name: fullName.trim() }
           }
         })
         if (signUpError) throw signUpError
@@ -48,12 +94,12 @@ export default function LoginPage() {
           router.push('/')
           router.refresh()
         } else {
-          setError('Kayıt başarılı! Lütfen giriş yapın.')
+          setSuccess('Kayıt başarılı! E-posta onay linki gerekiyorsa lütfen gelen kutunuzu kontrol edin ve giriş yapın.')
           setIsLogin(true)
         }
       }
     } catch (err: any) {
-      setError(err.message || 'Bir hata oluştu')
+      setError(mapAuthError(err?.message || 'Bir hata oluştu'))
     } finally {
       setLoading(false)
     }
@@ -77,14 +123,14 @@ export default function LoginPage() {
         <div className="flex bg-slate-900/60 p-1 rounded-xl mb-6 border border-slate-800">
           <button
             type="button"
-            onClick={() => { setIsLogin(true); setError(null); }}
+            onClick={() => { setIsLogin(true); setError(null); setSuccess(null); }}
             className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${isLogin ? 'bg-slate-800 text-white shadow' : 'text-slate-400 hover:text-white'}`}
           >
             Giriş Yap
           </button>
           <button
             type="button"
-            onClick={() => { setIsLogin(false); setError(null); }}
+            onClick={() => { setIsLogin(false); setError(null); setSuccess(null); }}
             className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${!isLogin ? 'bg-slate-800 text-white shadow' : 'text-slate-400 hover:text-white'}`}
           >
             Kayıt Ol
@@ -101,6 +147,12 @@ export default function LoginPage() {
         {error && (
           <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs flex items-center gap-2">
             <span>⚠️</span> {error}
+          </div>
+        )}
+
+        {success && (
+          <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 text-xs flex items-center gap-2">
+            <span>✓</span> {success}
           </div>
         )}
 
@@ -147,7 +199,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-medium rounded-xl text-sm transition-all shadow-lg shadow-cyan-500/25 disabled:opacity-50"
+            className="w-full py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-medium rounded-xl text-sm transition-all shadow-lg shadow-cyan-500/25 disabled:opacity-50 cursor-pointer"
           >
             {loading ? 'İşleniyor...' : isLogin ? 'Giriş Yap →' : 'Hesap Oluştur →'}
           </button>
