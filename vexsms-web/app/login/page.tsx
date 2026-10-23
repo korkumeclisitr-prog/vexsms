@@ -5,8 +5,8 @@ import { createClient } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
 
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  'https://zdblltfiqfttktkepubr.supabase.co',
+  'sb_publishable_s8L40TFgladKkyiOu1gOXQ_yWX0-2l9'
 )
 
 export default function LoginPage() {
@@ -44,7 +44,6 @@ export default function LoginPage() {
         })
         if (signUpError) throw signUpError
 
-        // Oturum açıldıysa yönlendir
         if (data.session) {
           router.push('/')
           router.refresh()
